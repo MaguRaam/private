@@ -1,0 +1,269 @@
+#include "../include/Weno432.h"
+
+void Weno4_3D::compute_rhs() {
+
+    reconstruct();
+    
+    unsigned int faces_per_cell = GeometryInfo<3>::faces_per_cell;
+
+	// Loop over all the cells
+	DoFHandler<3>::active_cell_iterator cell, neighbor ;
+
+    std::vector <Point<3> > face_quadrature_point(4);
+
+    double V_c, h; // Volume of the cell and surface area of the face
+	
+	Vector<double> nx(4), ny(4), nz(4), j_w(4);   // Face normal vectors
+
+   	std::vector< Vector<double> >UL(4, Vector<double>(5)), UR(4, Vector<double>(5)), WL(4, Vector<double>(5)), WR(4, Vector<double>(5));
+
+	std::vector< std::vector< Vector<double> > > gradUL, gradUR;
+	gradUL.resize(4);
+	gradUR.resize(4);
+	for(unsigned int q = 0; q < 4; ++q) {
+		gradUL[q].resize(5);
+		gradUR[q].resize(5);
+		for(unsigned int i = 0; i < 5; ++i) {
+			gradUL[q][i].reinit(3);
+			gradUR[q][i].reinit(3);
+		}
+	}
+
+   	Vector<double> F(5);
+    
+    bool boundary;
+
+	unsigned int local_face_index, g_i;  
+
+   	std::vector< std::vector< Vector<double> > >Flux(n_faces);
+   	std::vector< bool > did_not_compute_flux_for_the_face(n_faces, true); 
+ 
+    for (unsigned int f = 0; f < n_faces; f++) {
+        Flux[f].resize(4);
+	    for (unsigned int q = 0; q < 4; q++)
+   		   	Flux[f][q].reinit(5);
+    }
+
+	unsigned int neighbor_c ;
+
+	for (unsigned int c = 0; c < n_locally_cells; ++c) {
+
+		g_i = local_to_global_index_map[c];
+		cell = local_index_to_iterator[c];    
+
+        V_c = Cell[c].measure();
+
+        rhs1(c) = 0.0;
+    	rhs2(c) = 0.0;
+    	rhs3(c) = 0.0;
+    	rhs4(c) = 0.0;
+    	rhs5(c) = 0.0;
+        
+        for (unsigned int f = 0; f < faces_per_cell; ++f) {
+            
+			local_face_index = face_index_map[ cell->face_index(f) ];
+	    	for (unsigned int q = 0; q < 4; q++)
+				j_w[q] = Cell[c].face_jxw(f,q);
+            
+            if(did_not_compute_flux_for_the_face[local_face_index]) {
+               
+                // Get some geometry info
+
+				h = Cell[c].h(); 
+		    	for (unsigned int q = 0; q < 4; q++) {
+					nx[q] = Cell[c].nx(f,q);
+					ny[q] = Cell[c].ny(f,q);
+					nz[q] = Cell[c].nz(f,q);
+	                face_quadrature_point[q] = Cell[c].face_quadrature_point(f,q); 
+
+	                // Left face
+   	    	    	UL[q](0) = evaluate_weno_polynomial(coeffs_RHO[c], WENO_poly_consts[c], face_quadrature_point[q], h);
+   	    	    	UL[q](1) = evaluate_weno_polynomial(coeffs_RHO_U[c], WENO_poly_consts[c], face_quadrature_point[q], h);
+   	    	    	UL[q](2) = evaluate_weno_polynomial(coeffs_RHO_V[c], WENO_poly_consts[c], face_quadrature_point[q], h);
+   	    	    	UL[q](3) = evaluate_weno_polynomial(coeffs_RHO_W[c], WENO_poly_consts[c], face_quadrature_point[q], h);
+   	    	    	UL[q](4) = evaluate_weno_polynomial(coeffs_E[c], WENO_poly_consts[c], face_quadrature_point[q], h);
+
+					claw.conserved_to_primitive(UL[q], WL[q]);
+
+					gradUL[q][0] = evaluate_conservative_gradient(upwind_coeffs_RHO[c], WENO_poly_consts[c], face_quadrature_point[q], h);
+	    	    	gradUL[q][1] = evaluate_conservative_gradient(upwind_coeffs_RHO_U[c], WENO_poly_consts[c], face_quadrature_point[q], h);
+  	    	    	gradUL[q][2] = evaluate_conservative_gradient(upwind_coeffs_RHO_V[c], WENO_poly_consts[c], face_quadrature_point[q], h);
+	    	    	gradUL[q][3] = evaluate_conservative_gradient(upwind_coeffs_RHO_W[c], WENO_poly_consts[c], face_quadrature_point[q], h);
+	    	    	gradUL[q][4] = evaluate_conservative_gradient(upwind_coeffs_E[c], WENO_poly_consts[c], face_quadrature_point[q], h);
+
+/*
+					if (WL[q](0) < 0.0 || WL[q](4) < 0.0) {
+    		            std::cout<<"in compute rhs "<<std::endl<<"global index: "<<g_i<<"\t local index: "<<c
+    	                <<"\t rank: "<<Utilities::MPI::this_mpi_process(mpi_communicator)<<"\tface: "<<f<<"\tquad point: "<<face_quadrature_point[q]<<std::endl
+						<<"cell center: "<<cell->center()<<std::endl
+    	                <<"WL: "<<WL[q]<<"\n"
+						<<coeffs_E[c]<<std::endl<<WENO_poly_consts[c]<<std::endl;
+    	            }
+*/
+    			}
+/*
+				if (c == 0) {
+    	            std::cout<<"in compute rhs "<<std::endl<<"global index: "<<c
+                    <<"\tface: "<<f<<"\tquad point 1: "<<face_quadrature_point[q]<<"\th: "<<h<<std::endl
+                    <<WL1<<std::endl<<WL2<<std::endl
+					<<coeffs_E[c]<<std::endl<<WENO_poly_consts[c]<<std::endl;
+                }
+*/
+
+                if (cell->face(f)->at_boundary()) {
+	                if (cell->face(f)->boundary_id() == 0) {
+				    	for (unsigned int q = 0; q < 4; q++) 
+							WR[q] = initial_condition(face_quadrature_point[q], h_min);                                        
+                    }
+	                    
+		            else if (cell->face(f)->boundary_id() == 1) {
+	                        
+	     	           // Right boundary  (Outflow boundary conditions) 
+						for (unsigned int q = 0; q < 4; q++)   
+							WR[q] = WL[q];
+	                }
+
+		            else if (cell->face(f)->boundary_id() == 2) {
+                      
+	     	           // Right boundary  (No-Slip boundary conditions) 
+						for (unsigned int q = 0; q < 4; q++) {   
+							WR[q] = WL[q];
+							WR[q][1] = -WL[q][1]; WR[q][2] = -WL[q][2]; WR[q][3] = -WL[q][3];
+						}
+	                }
+
+		            else if (cell->face(f)->boundary_id() == 3) {
+//	                   std::cout<<"cell: "<<g_i<<"\tlocal: "<<c<<"\tf: "<<f<<std::endl;
+	     	           // Right boundary  (Outflow boundary conditions) 
+						for (unsigned int q = 0; q < 4; q++) {
+							WR[q] = WL[q];
+							double u_dot_n = WL[q](1)*nx[q] + WL[q](2)*ny[q] + WL[q](3)*nz[q];
+							WR[q](1) = WL[q](1) - 2.0*u_dot_n*nx[q];
+							WR[q](2) = WL[q](2) - 2.0*u_dot_n*ny[q];
+							WR[q](3) = WL[q](3) - 2.0*u_dot_n*nz[q];
+						}
+	                }
+					else {
+
+						std::cout<<"unassigned boundary face at: "<<cell->face(f)->center()<<std::endl;
+					}
+					for (unsigned int q = 0; q < 4; q++) {
+						gradUR[q] = gradUL[q];
+						claw.primitive_to_conserved(WR[q], UR[q]);					
+					}
+					boundary = true;     
+                }
+                
+                else {
+                    
+                    // Get the right state values
+
+	    	        neighbor = cell->neighbor(f);
+		            neighbor->get_dof_indices(local_neighbor_dof_indices);
+					neighbor_c = global_to_local_index_map[local_neighbor_dof_indices[0] ];
+					
+					h = Cell[neighbor_c].h();
+
+			    	for (unsigned int q = 0; q < 4; q++) {
+						nx[q] = Cell[c].nx(f,q);
+						ny[q] = Cell[c].ny(f,q);
+						nz[q] = Cell[c].nz(f,q);
+		                face_quadrature_point[q] = Cell[c].face_quadrature_point(f,q); 
+	
+		                // Right face
+   	    	    	    UR[q](0) = evaluate_weno_polynomial(coeffs_RHO[neighbor_c ], WENO_poly_consts[neighbor_c ],  face_quadrature_point[q], h);
+   	    	    	    UR[q](1) = evaluate_weno_polynomial(coeffs_RHO_U[neighbor_c ], WENO_poly_consts[neighbor_c ],  face_quadrature_point[q], h);
+   	    	    	    UR[q](2) = evaluate_weno_polynomial(coeffs_RHO_V[neighbor_c ], WENO_poly_consts[neighbor_c ],  face_quadrature_point[q], h);
+   	    	    	    UR[q](3) = evaluate_weno_polynomial(coeffs_RHO_W[neighbor_c ], WENO_poly_consts[neighbor_c ],  face_quadrature_point[q], h);
+    	    	    	UR[q](4) = evaluate_weno_polynomial(coeffs_E[neighbor_c ], WENO_poly_consts[neighbor_c ],  face_quadrature_point[q], h);
+						claw.conserved_to_primitive(UR[q], WR[q]);
+
+
+   	    	    	    gradUR[q][0] = evaluate_conservative_gradient(upwind_coeffs_RHO[neighbor_c ], WENO_poly_consts[neighbor_c ],  face_quadrature_point[q], h);
+   	    	    	    gradUR[q][1] = evaluate_conservative_gradient(upwind_coeffs_RHO_U[neighbor_c ], WENO_poly_consts[neighbor_c ],  face_quadrature_point[q], h);
+   	    	    	    gradUR[q][2] = evaluate_conservative_gradient(upwind_coeffs_RHO_V[neighbor_c ], WENO_poly_consts[neighbor_c ],  face_quadrature_point[q], h);
+   	    	    	    gradUR[q][3] = evaluate_conservative_gradient(upwind_coeffs_RHO_W[neighbor_c ], WENO_poly_consts[neighbor_c ],  face_quadrature_point[q], h);
+  	    	    	    gradUR[q][4] = evaluate_conservative_gradient(upwind_coeffs_E[neighbor_c ], WENO_poly_consts[neighbor_c ],  face_quadrature_point[q], h);
+
+
+		            if (WR[q](0) < 0.0 || WR[q](4) < 0.0 ) {
+						std::cout<<"in compute rhs "<<std::endl<<"global index: "<<g_i<<"\t local index: "<<c<<std::endl
+//						<<"neighbor global index: "<<local_neighbor_dof_indices[0] <<"\t local index: "<<neighbor_c
+//						<<"\t rank: "<<Utilities::MPI::this_mpi_process(mpi_communicator)<<"\tface: "<<f<<"\tquad : "<<face_quadrature_point[q]<<std::endl
+						<<"WL: "<<WL[q]
+//						<<"WR: "<<WR[q]
+						<<"\n"<<coeffs_E[neighbor_c]
+//						<<std::endl<<WENO_poly_consts[neighbor_c]
+						<<std::endl;
+					}
+
+/*
+					if(c == 1) {
+						std::cout<<"in compute rhs "<<std::endl<<"neighbor global index: "<<neighbor_c
+						<<"\tface: "<<f<<"\tcenter: "<<cell->face(f)->center()<<"\th: "<<h<<std::endl
+						<<WR1<<std::endl<<WR2<<std::endl<<coeffs_E[neighbor_c]<<std::endl<<WENO_poly_consts[neighbor_c]<<std::endl;
+					}                 
+					if( c == 1 ) {
+						std::cout<<"coeffs"<<std::endl;
+						for(unsigned int i = 0; i < 10; ++i )
+							std::cout<<coeffs_RHO[neighbor_c](i)<<"\t";
+						std::cout<<std::endl;
+						for(unsigned int i = 0; i < 10; ++i )
+							std::cout<<coeffs_RHO_U[neighbor_c](i)<<"\t";
+						std::cout<<std::endl;
+						for(unsigned int i = 0; i < 10; ++i )
+							std::cout<<coeffs_RHO_V[neighbor_c](i)<<"\t";
+						std::cout<<std::endl;
+						for(unsigned int i = 0; i < 10; ++i )
+							std::cout<<coeffs_E[neighbor_c](i)<<"\t";
+						std::cout<<std::endl;
+						std::cout<<"Poly"<<std::endl;
+						for(unsigned int i = 0; i < 9; ++i )
+							std::cout<<WENO_poly_consts[neighbor_c](i)<<"\t";
+						std::cout<<std::endl;							
+					}		
+*/
+    				}                  
+                    boundary = false; 
+                }
+                    
+		    	for (unsigned int q = 0; q < 4; q++) {         
+//						Flux[local_face_index][q] = HLLC_riemann_solver(WL[q], WR[q], nx[q], ny[q], nz[q], face_quadrature_point[q], boundary);
+//						Flux[local_face_index][q] = rotated_HLLC_riemann_solver(WL[q], WR[q], nx[q], ny[q], nz[q], face_quadrature_point[q], boundary);
+						Flux[local_face_index][q] = claw.NS_riemann_solver(UL[q], UR[q], gradUL[q], gradUR[q], nx[q], ny[q], nz[q], face_quadrature_point[q], boundary);
+//					Flux[local_face_index][q] = advection_diffusion_riemann_solver(UL[q], UR[q], gradWL[q], gradWR[q], nx[q], ny[q], nz[q], face_quadrature_point[q], boundary);
+//                	Flux[local_face_index][q] = local_Lax_Friedrichs_advection_solver(UL[q], UR[q], nx[q], ny[q], nz[q], face_quadrature_point[q], boundary);
+//					if(g_i == 960) pcout<<"q: "<<q<<"\nUL: "<<UL[q]<<"UR: "<<UR[q]<<"gradUL: "<<gradUL[q]<<"gradUR: "<<gradUR[q];
+//						<<nx[q]<<"\t"<<ny[q]<<"\t"<<nz[q]<<"\tquad: "<<face_quadrature_point[q]<<std::endl<<Flux[local_face_index][q]<<std::endl;
+//					if(g_i == 960 && f == 0) pcout<<"f: "<<f<<"\t q: "<<q<<"\nUL: "<<UL[q]<<"\nUR: "<<UR[q]<<"\ngradUL: "<<gradUL[q][0]<<"\ngradUR: "<<gradUR[q][0]<<"\nface_quadrature_point: "<<face_quadrature_point[q]<<"\nflux: "<<Flux[local_face_index][q](0)<<std::endl;
+				}	
+                did_not_compute_flux_for_the_face[local_face_index] = false; 
+            }
+            
+            else {
+		    	for (unsigned int q = 0; q < 4; q++)         
+                	Flux[local_face_index][q] *= -1.0;
+            }
+            F = 0.0;
+	    	for (unsigned int q = 0; q < 4; q++) {                  
+    	      	F(0) += j_w[q] * Flux[local_face_index][q](0); 
+		       	F(1) += j_w[q] * Flux[local_face_index][q](1); 
+		       	F(2) += j_w[q] * Flux[local_face_index][q](2);
+		       	F(3) += j_w[q] * Flux[local_face_index][q](3);
+		    	F(4) += j_w[q] * Flux[local_face_index][q](4);
+			}
+/*
+	    	for (unsigned int q = 0; q < 4; q++)
+		    	for (unsigned int i = 0; i < 5; i++)                                 
+		            F(i) += j_w[q] * Flux[local_face_index][q](i); 
+*/
+            // Add it to the rhs vectors
+            rhs1(c) += (-1.0/V_c)*F(0);
+            rhs2(c) += (-1.0/V_c)*F(1);
+            rhs3(c) += (-1.0/V_c)*F(2);
+            rhs4(c) += (-1.0/V_c)*F(3);
+            rhs5(c) += (-1.0/V_c)*F(4);
+        }
+	}
+}
+

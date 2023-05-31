@@ -1,0 +1,388 @@
+#include "../include/Weno432.h"
+
+Vector<double> solve_system(const FullMatrix<double>& A, const Vector<double>& b) {
+    
+    Vector<double> x(3);
+    
+    double det = A(0,0)* ( A(1,1)*A(2,2) - A(1,2)*A(2,1) ) -
+				 A(0,1)* ( A(1,0)*A(2,2) - A(1,2)*A(2,0) ) +
+				 A(0,2)* ( A(1,0)*A(2,1) - A(1,1)*A(2,0) );
+    if(det == 0.0) {
+
+		for(unsigned int i = 0.0; i<3; ++i) {
+			for(unsigned int j = 0.0; j<3; ++j)
+				std::cout<<A(i,j)<<"\t";
+			std::cout<<std::endl;
+		}
+	}
+    assert(det != 0.0);
+
+    double det_X = b(0)* ( A(1,1)*A(2,2) - A(1,2)*A(2,1) ) -
+				 A(0,1)* ( b(1)*A(2,2) - A(1,2)*b(2) ) +
+				 A(0,2)* ( b(1)*A(2,1) - A(1,1)*b(2) );
+
+    double det_Y = A(0,0)* ( b(1)*A(2,2) - A(1,2)*b(2) ) -
+				 b(0)* ( A(1,0)*A(2,2) - A(1,2)*A(2,0) ) +
+				 A(0,2)* ( A(1,0)*b(2) - b(1)*A(2,0) );
+
+    double det_Z = A(0,0)* ( A(1,1)*b(2) - b(1)*A(2,1) ) -
+				 A(0,1)* ( A(1,0)*b(2) - b(1)*A(2,0) ) +
+				 b(0)* ( A(1,0)*A(2,1) - A(1,1)*A(2,0) );
+    
+    x(0) = det_X/det;
+    x(1) = det_Y/det;
+    x(2) = det_Z/det;
+
+    
+    return x; 
+}
+
+void Weno4_3D::output_results() {
+
+	pcout<<"Writing output as .vtu file"<<std::endl; 
+	{
+		unsigned int g_i;
+		Vector<double> u(5); Vector<double> w(5);
+		for (unsigned int c = 0; c < n_locally_cells; ++c) {
+			g_i = local_to_global_index_map[c];
+			u(0) = local_RHO(g_i); u(1) = local_RHO_U(g_i); u(2) = local_RHO_V(g_i); u(3) = local_RHO_W(g_i); u(4) = local_E(g_i);
+
+			if(std::fabs(local_RHO(g_i)) > 10.0)
+				std::cout<<"g_i: "<<g_i<<"\t: "<<"rank: "<<Utilities::MPI::this_mpi_process(mpi_communicator)<<"\n"<<u<<std::endl;
+		}
+	}
+	DataOut<3> data_out;
+  	data_out.attach_dof_handler (dof_handler);
+   	data_out.add_data_vector (local_RHO, "RHO",DataOut<3>::type_dof_data);
+    data_out.add_data_vector (error_RHO, "error_RHO",DataOut<3>::type_dof_data);
+
+   	data_out.add_data_vector (local_RHO_U, "U",DataOut<3>::type_dof_data);
+   	data_out.add_data_vector (local_RHO_V, "V",DataOut<3>::type_dof_data);
+   	data_out.add_data_vector (local_RHO_W, "W",DataOut<3>::type_dof_data);
+   	data_out.add_data_vector (local_E, "P",DataOut<3>::type_dof_data);
+
+    data_out.add_data_vector (error_RHO_U, "error_RHO_U",DataOut<3>::type_dof_data);
+//    data_out.add_data_vector (error_RHO_V, "error_RHO_V",DataOut<3>::type_dof_data);
+//    data_out.add_data_vector (error_RHO_W, "error_RHO_W",DataOut<3>::type_dof_data);
+//    data_out.add_data_vector (error_E, "error_E",DataOut<3>::type_dof_data);
+
+   	data_out.build_patches ();
+
+	unsigned int t_ = time;
+	unsigned int decimal = (time - t_)*100000;
+//    const std::string filename = "plots/plot_" + Utilities::int_to_string(t_,2) + "p" + Utilities::int_to_string(decimal,5) + ".vtu";
+    const std::string filename = "plots/plot_" + Utilities::int_to_string(triangulation.n_active_cells(),6) + "_" + Utilities::int_to_string(log10(weight_ls),1)+ ".vtu";
+
+    data_out.write_vtu_in_parallel (filename.c_str(), MPI_COMM_WORLD);
+	pcout<<"Writing output as .vtu file is done"<<std::endl; 
+}
+
+
+/*
+void Weno4_3D::output_results() {
+
+	pcout<<"Writing output as .vtu file"<<std::endl; 
+
+	Vector<double> P(n_store_cell);
+	Vector<double> U(n_store_cell);
+	Vector<double> V(n_store_cell);
+	Vector<double> W(n_store_cell);
+	Vector<double> Rho(n_store_cell);
+	Vector<double> Vorticity_x(n_post_process_cell);
+	Vector<double> Vorticity_y(n_post_process_cell);
+	Vector<double> Vorticity_z(n_post_process_cell);
+	Vector<double> dRho_mag(n_post_process_cell);
+	unsigned int g_i;
+	{
+		Vector<double> u(5); Vector<double> w(5);
+		for (unsigned int c = 0; c < n_store_cell; ++c) {
+
+			g_i = local_to_global_index_map[c];
+			u(0) = RHO(g_i); u(1) = RHO_U(g_i); u(2) = RHO_V(g_i); u(3) = RHO_W(g_i); u(4) = E(g_i);
+   		    claw.conserved_to_primitive(u,w);
+			Rho(c) = w(0);
+			U(c) = w(1);
+			V(c) = w(2);
+			W(c) = w(3);
+			P(c) = w(4); 
+		}
+	}
+
+
+	unsigned int local_index ;
+  
+    // Compute gradients using least squares approach 
+    // Vectors and Matrices to solve the least squares gradient at cell center
+    
+    FullMatrix<double> A(3,3);
+    Vector<double> b_RHO(3); Vector<double> b_U(3); Vector<double> b_V(3); Vector<double> b_W(3);// Vector<double> b_P(3);
+    Vector<double> x_RHO(3); Vector<double> x_U(3); Vector<double> x_V(3); Vector<double> x_W(3);// Vector<double> x_P(3);
+    
+	double j_w, V0;
+	Point<3> q_point;   
+    Point<3> cell_center; 
+    Point<3> neighbor_cell_center;
+	unsigned int N_gp = 2; 
+    
+	// Weights for each neighbouring cells 
+
+	double w, dx, dy, dz;
+	double dRHO, dU, dV, dW;
+    double U_x, U_y, U_z, V_x, V_y, V_z, W_x, W_y, W_z;
+    // Store the summation terms 
+	double w_dx_dx, w_dx_dy, w_dx_dz, w_dy_dy, w_dy_dz, w_dz_dz, 
+			w_dx_RHO, w_dy_RHO, w_dz_RHO, 
+			w_dx_U, w_dy_U, w_dz_U, 
+			w_dx_V, w_dy_V, w_dz_V,
+			w_dx_W, w_dy_W, w_dz_W;
+    
+    Tensor<1,3> i_cap; Tensor<1,3> j_cap; Tensor<1,3> k_cap; 
+    Tensor<1,3> r_CF; // Vector joining the centers of the two neighbouring cells 
+    
+    i_cap[0] = 1.0; i_cap[1] = 0.0; i_cap[2] = 0.0; 
+	j_cap[0] = 0.0; j_cap[1] = 1.0; j_cap[2] = 0.0; 
+	k_cap[0] = 0.0; k_cap[1] = 0.0; k_cap[2] = 1.0; 
+    
+	double drho_mag_old, drho_max_local = 0.0, drho_max;
+	       
+    // Loop over all the cells 
+    DoFHandler<3>::active_cell_iterator cell = dof_handler.begin_active(), endc = dof_handler.end(), neighbor;
+
+	typedef typename std::set<DoFHandler<3>::active_cell_iterator>::iterator neighbor_cell_iter;
+
+	for (unsigned int c = 0; c < n_post_process_cell; ++c) {
+
+        // Make the summations zero 
+//        pcout<<"c: "<<c<<std::endl;
+         w_dx_dx = 0.0; w_dx_dy = 0.0; w_dx_dz = 0.0; 
+						w_dy_dy = 0.0; w_dy_dz = 0.0;
+									   w_dz_dz = 0.0; 
+
+   	     w_dx_RHO = 0.0; w_dy_RHO = 0.0; w_dz_RHO = 0.0;  
+   	     w_dx_U = 0.0;  w_dy_U = 0.0; w_dz_U = 0.0;  
+   	     w_dx_V = 0.0;  w_dy_V = 0.0; w_dz_V = 0.0;
+   	     w_dx_W = 0.0;  w_dy_W = 0.0; w_dz_W = 0.0;
+
+		cell = local_index_to_iterator[c];
+		cell_center = cell->center();
+
+		for (unsigned int d = 0; d < cell_all_neighbor_index[c].size(); ++d) {
+			local_neighbor_dof_indices[0] = cell_all_neighbor_index[c][d];
+			local_index = global_to_local_index_map[local_neighbor_dof_indices[0] ];			
+
+			neighbor_cell_center[0] = 0.0;
+			neighbor_cell_center[1] = 0.0;
+			neighbor_cell_center[2] = 0.0;
+
+			for (unsigned int i = 0; i < N_gp*N_gp*N_gp; i++) {
+				q_point = Cell[local_index].cell_quadrature_point(i);
+				j_w = Cell[local_index].jxw(i);
+				V0 = Cell[local_index].measure();
+				neighbor_cell_center[0] += (1./V0)*j_w*(q_point(0));
+				neighbor_cell_center[1] += (1./V0)*j_w*(q_point(1));
+				neighbor_cell_center[2] += (1./V0)*j_w*(q_point(2));
+			}
+
+            r_CF[0] = neighbor_cell_center(0) - cell_center(0);
+			r_CF[1] = neighbor_cell_center(1) - cell_center(1);
+			r_CF[2] = neighbor_cell_center(2) - cell_center(2);
+                
+            dx = r_CF*i_cap; dy = r_CF*j_cap; dz = r_CF*k_cap;
+            w = 1.0/neighbor_cell_center.distance(cell_center);
+                
+            dRHO = Rho(local_index) - Rho(c);
+            dU   =   U(local_index) - U(c);
+            dV   =   V(local_index) - V(c);
+            dW   =   W(local_index) - W(c);
+
+
+                
+            w_dx_dx += w*dx*dx; w_dx_dy += w*dx*dy; w_dx_dz += w*dx*dz; 
+								w_dy_dy += w*dy*dy; w_dy_dz += w*dy*dz; 
+													w_dz_dz += w*dz*dz; 
+
+            w_dx_RHO += w*dx*dRHO; w_dy_RHO += w*dy*dRHO; w_dz_RHO += w*dz*dRHO;
+    	    w_dx_U 	 += w*dx*dU;   w_dy_U   += w*dy*dU;   w_dz_U   += w*dz*dU;
+            w_dx_V 	 += w*dx*dV;   w_dy_V   += w*dy*dV;   w_dz_V   += w*dz*dV;
+            w_dx_W   += w*dx*dW;   w_dy_W   += w*dy*dW;   w_dz_W   += w*dz*dW;
+//			if(c == 20632) pcout<<"local_index: "<<local_index<<"\tRho: "<<Rho(local_index)<<"\tRHO(c): "<<Rho(c)<<"\tw: "<<w<<"\tdx: "<<dx<<"\tdRHO: "<<dRHO<<"\tw_dx_RHO: "<<w_dx_RHO<<std::endl;
+		}
+
+//		if(c == 20632) pcout<<"w: "<<w<<"\tdx: "<<dx<<"\tdRHO: "<<dRHO<<std::endl;
+    
+	        A(0,0) = w_dx_dx; A(0,1) = w_dx_dy; A(0,2) = w_dx_dz; 
+    	    A(1,0) = w_dx_dy; A(1,1) = w_dy_dy; A(1,2) = w_dy_dz;
+    	    A(2,0) = w_dx_dz; A(2,1) = w_dy_dz; A(2,2) = w_dz_dz;
+
+       
+   	    b_RHO(0) = w_dx_RHO; b_RHO(1) = w_dy_RHO; b_RHO(2) = w_dz_RHO;
+   	    b_U(0)   = w_dx_U;     b_U(1) = w_dy_U;	b_U(2) = w_dz_U;
+   	    b_V(0)   = w_dx_V;     b_V(1) = w_dy_V; b_V(2) = w_dz_V;
+   	    b_W(0)   = w_dx_W;     b_W(1) = w_dy_W; b_W(2) = w_dz_W;
+        
+   	    x_RHO = solve_system(A, b_RHO); x_U = solve_system(A, b_U); 
+   	    x_V = solve_system(A, b_V); x_W = solve_system(A, b_W);
+    	    
+//		if(c == 20632) pcout<<"dRho_mag: "<<dRho_mag(c)<<std::endl;
+
+		dRho_mag(c) = std::sqrt( x_RHO[0]*x_RHO[0] + x_RHO[1]*x_RHO[1] + x_RHO[2]*x_RHO[2]);
+
+//		if(c == 20632) pcout<<"b_RHO: "<<b_RHO<<"\nx_RHO: "<<x_RHO<<"\ndRho_mag: "<<dRho_mag(c)<<std::endl;
+
+		U_x = x_U[0];	U_y = x_U[1];	U_z = x_U[2];
+		V_x = x_V[0];	V_y = x_V[1];	V_z = x_V[2];
+		W_x = x_W[0];	W_y = x_W[1];	W_z = x_W[2];
+
+		Vorticity_x(c) = W_y - V_z;
+		Vorticity_y(c) = W_x - U_z;
+		Vorticity_z(c) = V_x - U_y;
+
+		drho_mag_old = dRho_mag(c);
+			
+		if( drho_mag_old > drho_max_local) 
+			drho_max_local = drho_mag_old;
+//        pcout<<"c over: "<<c<<std::endl;
+
+    }
+
+	drho_max = Utilities::MPI::max (drho_max_local, MPI_COMM_WORLD);
+
+	for (unsigned int c = 0; c < n_post_process_cell; ++c) {
+//		if(c == 20632) pcout<<"dRho_mag: "<<dRho_mag(c)<<"\tmax: "<<drho_max<<"\tratio: "<<-1.0*dRho_mag(c)/drho_max<<"\tmag: "<<std::exp( -1.0*dRho_mag(c)/drho_max )<<std::endl;
+		dRho_mag(c) = std::exp( -1.0*dRho_mag(c)/drho_max );
+//		if(c == 20632) pcout<<"dRho_mag: "<<dRho_mag(c)<<"\tmax: "<<drho_max<<std::endl;
+	}	
+
+//	pcout<<"avg data calcultion is over: "<<std::endl;
+
+	FE_DGQ<3> fe1(1);
+	DoFHandler<3> dof_handler_fe1(triangulation);
+	dof_handler_fe1.distribute_dofs (fe1);
+
+    IndexSet	locally_owned_dofs_fe1;
+    IndexSet    locally_relevant_dofs_fe1;
+
+    locally_owned_dofs_fe1 = dof_handler_fe1.locally_owned_dofs ();
+	locally_relevant_dofs_fe1 = locally_owned_dofs_fe1;
+
+	unsigned int dofs_per_cell = fe1.dofs_per_cell;
+	std::vector<types::global_dof_index> local_dof_indices_fe1(dofs_per_cell);
+
+//    LA::MPI::Vector		RHO_fe1, U_fe1, V_fe1, W_fe1, P_fe1, Ma_fe1, Vorticity_fe1, Vorticity_x_fe1, Vorticity_y_fe1, Vorticity_z_fe1, Schlieren_fe1;
+    LA::MPI::Vector     local_RHO_fe1, local_U_fe1, local_V_fe1, local_W_fe1, local_P_fe1, local_Ma_fe1, local_Vorticity_fe1, local_Vorticity_x_fe1, local_Vorticity_y_fe1, local_Vorticity_z_fe1, local_Schlieren_fe1;
+
+	local_RHO_fe1.reinit(locally_owned_dofs_fe1, MPI_COMM_WORLD);
+	local_U_fe1.reinit(locally_owned_dofs_fe1, MPI_COMM_WORLD);
+	local_V_fe1.reinit(locally_owned_dofs_fe1, MPI_COMM_WORLD);
+	local_W_fe1.reinit(locally_owned_dofs_fe1, MPI_COMM_WORLD);
+	local_P_fe1.reinit(locally_owned_dofs_fe1, MPI_COMM_WORLD);
+	local_Ma_fe1.reinit(locally_owned_dofs_fe1, MPI_COMM_WORLD);
+	local_Vorticity_fe1.reinit(locally_owned_dofs_fe1, MPI_COMM_WORLD);
+	local_Vorticity_x_fe1.reinit(locally_owned_dofs_fe1, MPI_COMM_WORLD);
+	local_Vorticity_y_fe1.reinit(locally_owned_dofs_fe1, MPI_COMM_WORLD);
+	local_Vorticity_z_fe1.reinit(locally_owned_dofs_fe1, MPI_COMM_WORLD);
+	local_Schlieren_fe1.reinit(locally_owned_dofs_fe1, MPI_COMM_WORLD);
+
+	unsigned int V_index, V_neighbor_index;
+
+
+    DoFHandler<3>::active_cell_iterator cell_fe1 = dof_handler_fe1.begin_active();
+	DoFHandler<3>::active_cell_iterator endc_fe1 = dof_handler_fe1.end();
+
+    for (; cell_fe1 != endc_fe1; ++cell_fe1) {
+
+      if (cell_fe1->is_locally_owned()) {
+
+	    cell_fe1->get_dof_indices (local_dof_indices_fe1);
+		double rho,u,v,w,p,vorticity_x,vorticity_y,vorticity_z,drho_mag;
+		for (unsigned int vv = 0; vv < 8; ++vv) {			
+			rho = 0.0; u = 0.0; v = 0.0; w = 0.0; p = 0.0;
+			vorticity_x = 0.0; vorticity_y = 0.0; vorticity_z = 0.0; drho_mag = 0.0;
+			V_index = cell_fe1->vertex_index(vv); 
+			unsigned int n_share_cell = vertex_to_cell_index[vertex_map[V_index]].size();
+			for (unsigned int i = 0; i < n_share_cell ; ++i) {
+				V_neighbor_index = vertex_to_cell_index[vertex_map[V_index]][i];
+				local_index = global_to_local_index_map[V_neighbor_index];
+				rho += Rho(local_index); 
+				u += U(local_index); 
+				v += V(local_index);
+				w += V(local_index);
+				p += P(local_index);
+				vorticity_x += Vorticity_x(local_index);
+				vorticity_y += Vorticity_y(local_index);
+				vorticity_z += Vorticity_z(local_index);
+				drho_mag += dRho_mag(local_index); 
+//				if(local_index == 20632) pcout<<"dRho_mag: "<<dRho_mag(local_index)<<std::endl;
+//	            if (local_dof_indices_fe1[vv] == 132923)
+//					pcout<<"local_index: "<<local_index<<"\tvalue: "<<dRho_mag(local_index)<<std::endl;
+
+			}
+
+			rho = rho/n_share_cell; 
+			u = u/n_share_cell; 
+			v = v/n_share_cell;
+			w = v/n_share_cell;
+			p = p/n_share_cell; 
+			vorticity_x = vorticity_x/n_share_cell;
+			vorticity_y = vorticity_y/n_share_cell;
+			vorticity_z = vorticity_z/n_share_cell;
+			drho_mag = drho_mag/n_share_cell; 
+	
+			local_RHO_fe1(local_dof_indices_fe1[vv]) = rho;
+			local_U_fe1(local_dof_indices_fe1[vv]) = u;
+			local_V_fe1(local_dof_indices_fe1[vv]) = v;
+			local_W_fe1(local_dof_indices_fe1[vv]) = w;
+			local_P_fe1(local_dof_indices_fe1[vv]) = p;
+			local_Ma_fe1(local_dof_indices_fe1[vv]) =  std::sqrt ((u*u+v*v+w*w) / (GAMMA*p/rho));
+			local_Vorticity_x_fe1(local_dof_indices_fe1[vv]) = vorticity_x;
+			local_Vorticity_y_fe1(local_dof_indices_fe1[vv]) = vorticity_y;
+			local_Vorticity_z_fe1(local_dof_indices_fe1[vv]) = vorticity_z;
+			local_Vorticity_fe1(local_dof_indices_fe1[vv]) = std::sqrt (vorticity_x*vorticity_x + vorticity_y*vorticity_y + vorticity_z*vorticity_z) ;
+//			local_Schlieren_fe1(local_dof_indices_fe1[vv]) = std::exp(-1.0*drho_mag/drho_max);
+			local_Schlieren_fe1(local_dof_indices_fe1[vv]) = drho_mag;
+
+		}
+
+	  }
+//		pcout<<std::endl;
+	}
+
+	local_RHO_fe1.compress(VectorOperation::insert);
+	local_U_fe1.compress(VectorOperation::insert);
+	local_V_fe1.compress(VectorOperation::insert);
+	local_W_fe1.compress(VectorOperation::insert);
+	local_P_fe1.compress(VectorOperation::insert);
+	local_Ma_fe1.compress(VectorOperation::insert);
+	local_Vorticity_x_fe1.compress(VectorOperation::insert);
+	local_Vorticity_y_fe1.compress(VectorOperation::insert);
+	local_Vorticity_z_fe1.compress(VectorOperation::insert);
+	local_Vorticity_fe1.compress(VectorOperation::insert);
+	local_Schlieren_fe1.compress(VectorOperation::insert);
+
+//	pcout<<"Ma_fe1: "<<Ma_fe1.size()<<"\tVorticity_x_fe1: "<<Vorticity_x_fe1.size()<<std::endl;
+
+	DataOut<3> data_out;
+  	data_out.attach_dof_handler (dof_handler_fe1);
+   	data_out.add_data_vector (local_RHO_fe1, "RHO");
+   	data_out.add_data_vector (local_U_fe1, "U");
+   	data_out.add_data_vector (local_V_fe1, "V");
+   	data_out.add_data_vector (local_W_fe1, "W");
+   	data_out.add_data_vector (local_P_fe1, "P");
+   	data_out.add_data_vector (local_Ma_fe1, "Ma");
+
+   	data_out.add_data_vector (local_Vorticity_x_fe1, "Vorticity_x");
+   	data_out.add_data_vector (local_Vorticity_y_fe1, "Vorticity_y");
+   	data_out.add_data_vector (local_Vorticity_z_fe1, "Vorticity_z");
+   	data_out.add_data_vector (local_Vorticity_fe1, "Vorticity");
+   	data_out.add_data_vector (local_Schlieren_fe1, "Schlieren");
+
+   	data_out.build_patches (mapping);
+
+	unsigned int t_ = time;
+	unsigned int decimal = (time - t_)*100000;
+    const std::string filename = "plots/plot_" + Utilities::int_to_string(t_,2) + "p" + Utilities::int_to_string(decimal,5) + ".vtu";
+
+    data_out.write_vtu_in_parallel (filename.c_str(), MPI_COMM_WORLD);
+
+}
+*/

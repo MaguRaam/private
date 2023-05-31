@@ -1,0 +1,110 @@
+#include "../include/Weno432.h" 
+
+void Weno4_3D::post_process_force() {
+	
+	unsigned int faces_per_cell = GeometryInfo<3>::faces_per_cell;
+
+	// Loop over all the cells
+	DoFHandler<3>::active_cell_iterator cell, neighbor;
+
+    Point<3> face_center;
+
+    double S_f, h; // Volume of the cell and diameter of the cell
+	
+	double nx, ny, nz; 
+
+    Vector<double> U(5);   
+	std::vector< Vector<double> > gradU(4, Vector<double> (3)), stress(3, Vector<double> (3));
+	
+	double local_Fx_v = 0.0, local_Fy_v = 0.0, local_Fz_v = 0.0, local_Fx_p = 0.0, local_Fy_p = 0.0, local_Fz_p = 0.0;
+	double p, tau_xx, tau_xy, tau_yy, local_Fd_p = 0.0, local_Fl_p = 0.0, local_Fd_v = 0.0, local_Fl_v = 0.0; 
+    double h_max = 0.0;
+	unsigned int first_order_cell = 0;
+	bool no_slip_cell = false;
+	for (unsigned int c = 0; c < n_locally_cells; ++c) {
+        
+		cell = local_index_to_iterator[c]; 
+		        
+		h = Cell[c].h(); 
+		
+		for (unsigned int f = 0; f < faces_per_cell; ++f) {
+		
+			if (cell->face(f)->at_boundary()) {
+			
+				if (cell->face(f)->boundary_id() == 2) {
+
+					if(first_order_cell == 0)
+						if(is_1st_order[c]) {
+							first_order_cell = 1;
+							std::cout<<"g_i: "<<g_i<<"\t"<<cell->center()<<std::endl;
+						}
+					
+					face_center = Cell[c].face_center_quadrature_point(f); 
+//					pcout<<"g_i: "<<local_to_global_index_map[c]<<"\tcenter: "<<cell->face(f)->center()<<"\tradii: "<<face_center.distance(Point<3>(0.0,0.0))<<std::endl;
+					nx = Cell[c].center_nx(f);
+					ny = Cell[c].center_ny(f);
+					nz = Cell[c].center_ny(f);
+					S_f = Cell[c].S_f(f); 
+					if ( h > h_max)
+						h_max = h;
+					U(0) = evaluate_weno_polynomial(coeffs_RHO[c], WENO_poly_consts[c], face_center, h);
+					U(1) = evaluate_weno_polynomial(coeffs_RHO_U[c], WENO_poly_consts[c], face_center, h);
+					U(2) = evaluate_weno_polynomial(coeffs_RHO_V[c], WENO_poly_consts[c], face_center, h);
+					U(3) = evaluate_weno_polynomial(coeffs_RHO_W[c], WENO_poly_consts[c], face_center, h);
+					U(4) = evaluate_weno_polynomial(coeffs_E[c], WENO_poly_consts[c], face_center, h);
+					
+	    	    	gradU[0] = evaluate_conservative_gradient(coeffs_RHO[c ], WENO_poly_consts[c ],  face_center, h);
+   	    	    	gradU[1] = evaluate_conservative_gradient(coeffs_RHO_U[c ], WENO_poly_consts[c ],  face_center, h);
+   	    	    	gradU[2] = evaluate_conservative_gradient(coeffs_RHO_V[c ], WENO_poly_consts[c ],  face_center, h);
+   	    	    	gradU[3] = evaluate_conservative_gradient(coeffs_RHO_W[c ], WENO_poly_consts[c ],  face_center, h);
+					
+					claw.additional_data(U, gradU, p, stress);
+
+					local_Fx_p += (-p)*nx*S_f;
+					local_Fy_p += (-p)*ny*S_f;
+					local_Fz_p += (-p)*nz*S_f;
+					local_Fx_v += stress[0][0]*nx + stress[0][1]*ny + stress[0][2]*nz;
+					local_Fy_v += stress[1][0]*nx + stress[1][1]*ny + stress[1][2]*nz;
+					local_Fz_v += stress[2][0]*nx + stress[2][1]*ny + stress[2][2]*nz;
+
+				}
+			}
+		}
+
+    }
+
+	double Fx_p = Utilities::MPI::sum (local_Fx_p, MPI_COMM_WORLD)/(0.5*claw.gamma()*M*M);
+	double Fy_p = Utilities::MPI::sum (local_Fy_p, MPI_COMM_WORLD)/(0.5*claw.gamma()*M*M);
+	double Fz_p = Utilities::MPI::sum (local_Fz_p, MPI_COMM_WORLD)/(0.5*claw.gamma()*M*M);
+
+	double Fx_v = Utilities::MPI::sum (local_Fx_v, MPI_COMM_WORLD)/(0.5*claw.gamma()*M*M);
+	double Fy_v = Utilities::MPI::sum (local_Fy_v, MPI_COMM_WORLD)/(0.5*claw.gamma()*M*M);
+	double Fz_v = Utilities::MPI::sum (local_Fz_v, MPI_COMM_WORLD)/(0.5*claw.gamma()*M*M);
+
+	unsigned int global_first_order_cell = Utilities::MPI::max (first_order_cell, MPI_COMM_WORLD);
+
+//	std::cout<<"h_max: "<<h_max<<std::endl;
+    if (Utilities::MPI::this_mpi_process(mpi_communicator) == 0){
+		std::ofstream fout_darg ; 
+		fout_darg.flags( std::ios::dec | std::ios::scientific ) ; 
+		fout_darg.precision(8) ;
+
+    	const std::string filename = "drag.dat";
+		fout_darg.open(filename,std::ios::in | std::ios::out | std::ios::app);
+	
+	   	fout_darg << time 
+   					<<"\t"<<global_first_order_cell
+   					<<"\t"<<Fx_p + Fx_v
+   					<<"\t"<<Fy_p + Fy_v
+   					<<"\t"<<Fz_p + Fz_v
+   					<<"\t"<<Fx_p
+   					<<"\t"<<Fx_v
+   					<<"\t"<<Fy_p
+   					<<"\t"<<Fy_v
+   					<<"\t"<<Fz_p
+   					<<"\t"<<Fz_v
+   					<< std::endl;
+		fout_darg.close();
+	}
+	
+}

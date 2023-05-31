@@ -1,0 +1,79 @@
+#include "../include/Weno432.h"
+
+
+// Perform the actual reconstruction 
+
+//void Weno43_2D::reconstruct_check(const SphericalManifold<3>& boundary_circular) {
+void Weno4_3D::reconstruct_check() {
+
+	DoFHandler<3>::active_cell_iterator cell;
+	unsigned int g_i;
+	double h;
+	Point<3> face_quadrature_point, vertex1, vertex2;
+	double u_slip, v_slip, w_slip, u_slip_max = 0, v_slip_max = 0, w_slip_max = 0, global_u_slip_max, global_v_slip_max, global_w_slip_max;
+	unsigned int first_order_cell = 0;
+	unsigned int n_point = 20;
+	double weight_ls_increment = 1.0/(n_point + 2);
+
+    QGauss<3-1> face_quadrature_formula(n_point);
+    FEFaceValues<3> fv_face_values (mapping, fv, face_quadrature_formula, update_quadrature_points);
+
+	for (unsigned int c = 0; c < n_relevant_cells; ++c) {
+
+		g_i = local_to_global_index_map[c];
+		cell = local_index_to_iterator[c];
+
+		h = Cell[c].h();
+
+        for (unsigned int f = 0; f < 6; ++f) {
+
+			if(cell->face(f)->at_boundary()) {
+
+                if (cell->face(f)->boundary_id() == 2) {
+						if(first_order_cell == 0)
+							if(is_1st_order[c])
+								first_order_cell = 1;
+
+					fv_face_values.reinit(cell, f);
+					for(unsigned int k = 0; k < n_point; ++k) {
+						face_quadrature_point = fv_face_values.quadrature_point(k);
+			            u_slip = evaluate_weno_polynomial(coeffs_RHO_U[c], WENO_poly_consts[c], face_quadrature_point, h);
+			            v_slip = evaluate_weno_polynomial(coeffs_RHO_V[c], WENO_poly_consts[c], face_quadrature_point, h);
+			            w_slip = evaluate_weno_polynomial(coeffs_RHO_W[c], WENO_poly_consts[c], face_quadrature_point, h);
+						if(std::fabs(u_slip) > std::fabs(u_slip_max))
+							u_slip_max = u_slip;
+						if(std::fabs(v_slip) > std::fabs(v_slip_max))
+							v_slip_max = v_slip;
+						if(std::fabs(w_slip) > std::fabs(w_slip_max))
+							w_slip_max = w_slip;
+
+					}
+				}
+
+			}
+		}
+       
+    } // End of cell loop 
+
+	global_u_slip_max = Utilities::MPI::max (std::fabs(u_slip_max), MPI_COMM_WORLD);
+	global_v_slip_max = Utilities::MPI::max (std::fabs(v_slip_max), MPI_COMM_WORLD);
+	global_w_slip_max = Utilities::MPI::max (std::fabs(w_slip_max), MPI_COMM_WORLD);
+	unsigned int global_first_order_cell = Utilities::MPI::max (first_order_cell, MPI_COMM_WORLD);
+    if (Utilities::MPI::this_mpi_process(mpi_communicator) == 0){
+		std::ofstream fout_convergence ; 
+		fout_convergence.flags( std::ios::dec | std::ios::scientific ) ; 
+		fout_convergence.precision(8) ;
+
+    	const std::string filename = "recon_cylinder.dat";
+		fout_convergence.open(filename,std::ios::in | std::ios::out | std::ios::app);
+	
+	   	fout_convergence << time 
+   					<<"\t"<<global_first_order_cell
+   					<<"\t"<<global_u_slip_max
+   					<<"\t"<<global_v_slip_max
+   					<<"\t"<<global_w_slip_max
+   					<< std::endl;
+		fout_convergence.close();
+	}    
+
+} // End of function 
