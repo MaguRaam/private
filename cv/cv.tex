@@ -1,0 +1,81 @@
+\documentclass{muratcan_cv}
+
+\setname{Magu Raam Prasaad}{R}
+\setaddress{Bengaluru/India}
+\setmobile{+91 9791521360}
+\setmail{maguprasaad@iisc.ac.in}
+\setposition{PhD student} %ignored for now
+ %you can play with color of the template (red is also nice..)
+\setbitbucketaccount{https://bitbucket.org/MaguRaam/} %you can play with color of the template (red is also nice..)
+\setthemecolor{red} %you can play with color of the template (red is also nice..)
+
+\begin{document}
+%Set variables
+%You can add sections, texts, explanations just by copying the style below. Replace the dummy texts "\lipsum[1][x-x]\par" with actual texts.
+%Create header
+\headerview
+\vspace{1ex}
+%Sections
+%
+% Summary
+\addblocktext{Summary}{
+    I am a Ph.D. student in the Indian Institute of Science Mechanical Department. I work on large-scale numerical simulation of single and multiple cavitation bubble collapse process to develop a detailed understanding of acoustic wave emission and propagation. Broadly my research interests are in numerical simulation of partial differential equations and high-performance computing to solve complex multiphysics problems.
+}
+%
+%Education
+\section{Education} 
+    \datedexperience{Shiv Nadar University}{2013-2017} 
+    \explanation{BTech in Mechanical Engineering and Minor in Physics} 
+    \datedexperience{Shiv Nadar University}{2017-2019} 
+    \explanation{MTech in Mechanical Design} 
+%Experience
+\section{Experience}
+%
+    \datedexperience{Research Assistant}{2019-Summer / SNU} 
+    \explanation{Research Assitant in Naval Research Board project} 
+%
+
+%
+% Research Project
+\section{Research Projects}
+    %
+    \datedexperience{Master’s Thesis}{  2018-2019/ SNU} 
+    \explanationdetail{OpenFOAM implementation of Immersed Boundary Method for fluid-structure interaction.} 
+    \datedexperience{Naval Research Board project}{  2019-Summer/ SNU}
+    \explanationdetail{Numerical Simulation of Manta Ray propulsion using Immersed Boundary Method to develop under water vehicle.}
+    \datedexperience{PhD Project}{2019-current/ IISc} 
+    \explanationdetail{
+    Large-scale numerical simulation of single and multiple cavitation bubble collapse process to develop a detailed understanding of acoustic wave emission and propagation.
+     }
+%Conference publication
+\section{Conference}
+\datedexperience{}{}
+\explanationdetail{Magu Raam Prasaad R, Ajit Kumar and Santanu Mitra, “OpenFOAM implementation of immersed boundary method to simulate fluid-solid interaction problems” , ICCM2019, July 9th-13th, Singapore THE 10THINTERNATIONAL CONFERENCE ON COMPUTATIONAL METHODS.}
+\datedexperience{}{}\\
+\explanationdetail{Magu Raam Prasaad R and Venkatramani J, Investigating the route to flutter in a pitch-plunge airfoil with freeplay nonlinearity subjected to input flow fluctuations,VETOMAC 2018,Lisbon,Portugal,10-13,September-2018.}
+
+\section{Skills}
+    %
+    \newcommand{\skillone}{\createskill{Programming Languages}{\textbf{\emph{Experienced:}} \ \  C \cpshalf C++ \ \ \textbf{\emph{Familiar:}} Python \cpshalf  Julia }}
+    %
+    \newcommand{\skilltwo}{\createskill{Parallel Computing}{MPI} and experience in HPC}
+    %
+    \newcommand{\skillthree}{\createskill{Programming Paradigms}{Object-Oriented Programming \cpshalf Generic Programming \cpshalf Functional Programming}}
+    \newcommand{\skillfour}{\createskill{Numerical Libraries}{PETSc \cpshalf deal.II \cpshalf OpenFOAM}}
+    %
+    \newcommand{\skillfive}{\createskill{Visualization and Meshing Tools}{ParaView \cpshalf VisIt \cpshalf Gmsh}}
+    %
+    \newcommand{\skillsix}{\createskill{Other Tools and Libraries}{ Git \cpshalf Latex \cpshalf STL \cpshalf Blitz++ \cpshalf Numpy \cpshalf Matplotplib }}
+    %
+
+ \newcommand{\skillseven}{\createskill{Languages}{\textbf{\emph{Native:}} \ \  Tamil \ \ \textbf{\emph{Fluent:}} \ \ English  }}
+    %
+    \createskills{\skillone, \skilltwo, \skillthree, \skillfour, \skillfive, \skillsix, \skillseven}
+\section{Hobbies}
+    \newcommand{\extraone}{Playing basketball}
+    \newcommand{\extratwo}{Long distance-running}
+    \newcommand{\listofextras}{\extraone, \extratwo}
+    \createbullets{\listofextras}
+%Footnote
+\createfootnote
+\end{document}

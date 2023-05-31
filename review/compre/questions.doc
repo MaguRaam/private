@@ -1,0 +1,34 @@
+FLUID
+Write down navier stokes compressible
+Derive vorticity equation from navier stokes
+Biotsavart law in vorticity dynamics
+How Biotsavat law is useful in vorticity dynamics
+velocity field in cavitation bubble collapse
+Will there be formation of vorticity
+What is the vorticity field in and around the bubble during the collapse
+Will there be formation of boundary layer
+What is the difference between shock wave and blast wave and acoustic wave
+Pressure range for blast wave
+Can navier stokes or continuum formulation can be used for violent bubble collapse
+What is stokes hypothesis
+Will it be violated in this problem ?
+And where can you see cavitation bubble formation in real life?
+And how cavitation bubbles are formed
+
+
+CFD
+
+1. write down the linear advection equation
+2. Is it hyperbolic
+3. How to show the equation is hyperbolic
+4. Write down the second order wave equation and show it is hyperbolic
+5. discretize advection using FTCS
+6. Is it stable show the stability using the Von-Neumann stability analysis
+7. How will you make it stable without artificial dissipation
+8. Show implicit scheme is stable using Von Neumann stability analysis
+8. What is modified equation?
+9. write down the general form of modified pde for the advection equation?
+10. what kind of terms will you retain on the right hand side ?
+11. Where does the odd derivative come from time or space ?
+12. How did you remove the time derivative in the modified equation in space ?
+13. Can we directly use the orginal pde and replace the time derivative term ?
